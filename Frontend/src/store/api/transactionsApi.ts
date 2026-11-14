@@ -7,6 +7,7 @@ interface Transaction {
   type: "income" | "expense";
   category: string;
   date: string;
+  createdAt?: string;
 }
 interface SummaryResponse {
   totalIncome: number;
@@ -16,7 +17,9 @@ interface SummaryResponse {
 
 export const transactionsApi = createApi({
   reducerPath: "transactionsApi",
-  baseQuery: fetchBaseQuery({ baseUrl: "http://localhost:5000/api" }),
+  baseQuery: fetchBaseQuery({
+    baseUrl: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+  }),
   tagTypes: ["Transaction"],
   endpoints: (builder) => ({
     getTransactions: builder.query<Transaction[], void>({

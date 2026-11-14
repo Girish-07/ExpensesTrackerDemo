@@ -1,25 +1,33 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 interface Category {
-  _id?: string;
+  _id: string;
   name: string;
-  type: "income" | "expense" | "both";
-  color: string;
-  icon: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
+interface NewCategory {
+  name: string;
+}
+
+interface AddCategoryResponse {
+  category: Category;
+  message: string;
+}
+
 export const categoriesApi = createApi({
   reducerPath: "categoriesApi",
-  baseQuery: fetchBaseQuery({ baseUrl: "http://localhost:5000/api" }),
+  baseQuery: fetchBaseQuery({
+    baseUrl: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+  }),
   tagTypes: ["Category", "Transaction"],
   endpoints: (builder) => ({
     getCategories: builder.query<Category[], void>({
       query: () => "/categories",
       providesTags: ["Category"],
     }),
-    addCategory: builder.mutation<Category, Partial<Category>>({
+    addCategory: builder.mutation<AddCategoryResponse, NewCategory>({
       query: (category) => ({
         url: "/categories",
         method: "POST",

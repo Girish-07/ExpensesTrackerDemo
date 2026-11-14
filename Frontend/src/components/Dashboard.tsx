@@ -1,375 +1,225 @@
-import {
-  useGetTransactionsQuery,
-  useGetSummaryQuery,
-} from "../store/api/transactionsApi";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FaArrowUp,
-  FaArrowDown,
-  FaDollarSign,
-  FaChartPie,
-  FaPlus,
-} from "react-icons/fa";
-import {
-  LineChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
-import { useState } from "react";
+import { FaArrowDown, FaArrowUp, FaPlus } from "react-icons/fa";
+import {
+  useGetSummaryQuery,
+  useGetTransactionsQuery,
+} from "../store/api/transactionsApi";
+
+const formatCurrency = (amount: number) =>
+  `$${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 const Dashboard = () => {
-  const { data: transactions = [] } = useGetTransactionsQuery();
-  const { data: summary } = useGetSummaryQuery();
   const navigate = useNavigate();
+  const {
+    data: transactions = [],
+    isLoading: transactionsLoading,
+    isError: transactionsError,
+  } = useGetTransactionsQuery();
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+  } = useGetSummaryQuery();
 
-  const { totalIncome = 0, totalExpenses = 0, netAmount = 0 } = summary || {};
+  const monthlyData = useMemo(() => {
+    const totals: Record<string, { income: number; expense: number }> = {};
 
-  // Calculate savings rate
-  const savingsRate =
-    totalIncome > 0 ? ((netAmount / totalIncome) * 100).toFixed(1) : 0;
+    transactions.forEach((transaction) => {
+      const date = new Date(transaction.date);
+      if (Number.isNaN(date.getTime())) return;
 
-  // Calculate monthly trend data
-  const monthlyData = [
-    { month: "Jan", income: 5000, expense: 3200 },
-    { month: "Feb", income: 5500, expense: 3400 },
-    { month: "Mar", income: 5200, expense: 3600 },
-    { month: "Apr", income: 6000, expense: 3500 },
-    { month: "May", income: 5800, expense: 3500 },
-    { month: "Jun", income: 6200, expense: 3600 },
+      const monthKey = `${date.getFullYear()}-${String(
+        date.getMonth() + 1,
+      ).padStart(2, "0")}`;
+      totals[monthKey] ??= { income: 0, expense: 0 };
+      totals[monthKey][transaction.type] += transaction.amount;
+    });
+
+    return Object.entries(totals)
+      .sort(([first], [second]) => first.localeCompare(second))
+      .slice(-6)
+      .map(([monthKey, amounts]) => {
+        const [year, month] = monthKey.split("-").map(Number);
+        return {
+          month: new Date(year, month - 1).toLocaleDateString("en-US", {
+            month: "short",
+            year: "2-digit",
+          }),
+          ...amounts,
+        };
+      });
+  }, [transactions]);
+
+  if (transactionsLoading || summaryLoading) {
+    return (
+      <main className="flex min-h-[70vh] items-center justify-center bg-gray-50 text-gray-600">
+        Loading your finances...
+      </main>
+    );
+  }
+
+  if (transactionsError || summaryError || !summary) {
+    return (
+      <main className="min-h-[70vh] bg-gray-50 px-4 py-10 md:px-8">
+        <p role="alert" className="mx-auto max-w-3xl text-red-700">
+          Could not load your finances. Check the backend connection and try
+          again.
+        </p>
+      </main>
+    );
+  }
+
+  const recentTransactions = transactions.slice(0, 5);
+  const cards = [
+    { label: "Total income", amount: summary.totalIncome, color: "text-green-700" },
+    { label: "Total expenses", amount: summary.totalExpenses, color: "text-red-700" },
+    { label: "Balance", amount: summary.netAmount, color: "text-gray-900" },
   ];
 
-  // Calculate expense categories
-  const expensesByCategory = transactions
-    .filter((t) => t.type === "expense")
-    .reduce((acc, transaction) => {
-      const category = transaction.category;
-      if (!acc[category]) {
-        acc[category] = 0;
-      }
-      acc[category] += transaction.amount;
-      return acc;
-    }, {} as Record<string, number>);
-
-  const categoryData = Object.entries(expensesByCategory).map(
-    ([name, value]) => ({
-      name,
-      value,
-    })
-  );
-
-  const COLORS = ["#FF6B6B", "#FFA500", "#4ECDC4", "#45B7D1", "#9B59B6"];
-
-  // Get recent transactions (last 5)
-  const recentTransactions = transactions.slice(0, 5);
-
-  const [hoverCard, setHoverCard] = useState<number | null>(null);
-  const [transactionCard, setTransactionCard] = useState<number | null>(null);
-
   return (
-    <div className="min-h-[90vh] bg-white p-4 md:p-8 page-enter">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div
-          className={`flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8 gap-4 transition-all duration-300 ${
-            hoverCard !== null ? "blur-sm" : ""
-          }`}
-        >
-          <div className="flex-1">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-              Welcome back! 👋
-            </h1>
-            <p className="text-sm md:text-base text-gray-500 mt-1">
-              Here's your financial overview for this month
+    <main className="min-h-[90vh] bg-gray-50 px-4 py-10 md:px-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-2 text-gray-600">
+              A summary of all your recorded transactions.
             </p>
           </div>
           <button
-            onClick={() => {
-              navigate("/transactions");
-              window.scrollTo(0, 0);
-            }}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors duration-200 shadow-lg cursor-pointer"
+            type="button"
+            onClick={() => navigate("/transactions")}
+            className="flex items-center justify-center gap-2 rounded-lg bg-cyan-700 px-5 py-3 font-medium text-white hover:bg-cyan-800"
           >
-            <FaPlus />
-            Add Transaction
+            <FaPlus aria-hidden="true" />
+            Add transaction
           </button>
-        </div>
+        </header>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 lg:gap-12 md:gap-6 mb-6 md:mb-8">
-          {/* Total Balance */}
-          <div
-            className={`bg-white rounded-2xl p-6 shadow-md border border-gray-200 hover:scale-[1.5] hover:z-10 transition-all duration-500 cursor-pointer ${
-              hoverCard !== null && hoverCard !== 1 ? "blur-sm" : ""
-            }`}
-            onMouseEnter={() => setHoverCard(1)}
-            onMouseLeave={() => setHoverCard(null)}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="bg-blue-100 p-3 rounded-xl">
-                <FaDollarSign className="text-blue-600 text-lg" />
-              </div>
-              <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                <FaArrowUp className="text-xs" />
-                +2%
-              </span>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-800">
-              ${netAmount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-            </h2>
-            <p className="text-gray-500 text-sm mt-1">Total Balance</p>
-          </div>
-
-          {/* Monthly Income */}
-          <div
-            className={`bg-white rounded-2xl p-6 shadow-md border border-gray-200 hover:scale-[1.5] hover:z-10 transition-all duration-700 cursor-pointer ${
-              hoverCard !== null && hoverCard !== 2 ? "blur-sm" : ""
-            }`}
-            onMouseEnter={() => setHoverCard(2)}
-            onMouseLeave={() => setHoverCard(null)}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="bg-green-100 p-3 rounded-xl">
-                <FaArrowUp className="text-green-600 text-lg" />
-              </div>
-              <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                <FaArrowUp className="text-xs" />
-                +2%
-              </span>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-800">
-              ${totalIncome.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-            </h2>
-            <p className="text-gray-500 text-sm mt-1">Monthly Income</p>
-          </div>
-
-          {/* Monthly Expenses */}
-          <div
-            className={`bg-white rounded-2xl p-6 shadow-md border border-gray-200 hover:scale-[1.5] hover:z-10 transition-all duration-700 cursor-pointer ${
-              hoverCard !== null && hoverCard !== 3 ? "blur-sm" : ""
-            }`}
-            onMouseEnter={() => setHoverCard(3)}
-            onMouseLeave={() => setHoverCard(null)}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="bg-red-100 p-3 rounded-xl">
-                <FaArrowDown className="text-red-600 text-lg" />
-              </div>
-              <span className="text-red-600 text-sm font-medium flex items-center gap-1">
-                <FaArrowDown className="text-xs" />
-                -5%
-              </span>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-800">
-              ${totalExpenses.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-            </h2>
-            <p className="text-gray-500 text-sm mt-1">Monthly Expenses</p>
-          </div>
-
-          {/* Savings Rate */}
-          <div
-            className={`bg-white rounded-2xl p-6 shadow-md border border-gray-200 hover:scale-[1.5] hover:z-10 transition-all duration-700 cursor-pointer ${
-              hoverCard !== null && hoverCard !== 4 ? "blur-sm" : ""
-            }`}
-            onMouseEnter={() => setHoverCard(4)}
-            onMouseLeave={() => setHoverCard(null)}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="bg-purple-100 p-3 rounded-xl">
-                <FaChartPie className="text-purple-600 text-lg" />
-              </div>
-              <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                <FaArrowUp className="text-xs" />
-                +2.1%
-              </span>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-800">{savingsRate}%</h2>
-            <p className="text-gray-500 text-sm mt-1">Savings Rate</p>
-          </div>
-        </div>
-
-        {/* ================================================================================ */}
-        {/* ================================================================================ */}
-        {/* ================================================================================ */}
-
-        {/* Charts Section */}
-        <div
-          className={`grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8 transition-all duration-300 ${
-            hoverCard !== null ? "blur-sm" : ""
-          }`}
+        <section
+          aria-label="Financial totals"
+          className="mb-8 grid gap-4 sm:grid-cols-3"
         >
-          {/* Monthly Trend Chart */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-4 md:p-6 shadow-md">
-            <h3 className="text-base md:text-lg font-semibold text-gray-800 mb-4 md:mb-6">
-              Monthly Trend
-            </h3>
+          {cards.map((card) => (
+            <article
+              key={card.label}
+              className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-sm text-gray-600">{card.label}</p>
+              <p className={`mt-2 text-2xl font-bold ${card.color}`}>
+                {formatCurrency(card.amount)}
+              </p>
+            </article>
+          ))}
+        </section>
+
+        <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-5 text-xl font-semibold text-gray-900">
+            Income and expenses by month
+          </h2>
+          {monthlyData.length === 0 ? (
+            <p className="py-12 text-center text-gray-600">
+              Add transactions to see your monthly trend.
+            </p>
+          ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" stroke="#888" />
-                <YAxis stroke="#888" />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                 <Line
                   type="monotone"
                   dataKey="income"
-                  stroke="#10B981"
+                  name="Income"
+                  stroke="#15803d"
                   strokeWidth={2}
-                  dot={{ fill: "#10B981", r: 4 }}
                 />
                 <Line
                   type="monotone"
                   dataKey="expense"
-                  stroke="#EF4444"
+                  name="Expenses"
+                  stroke="#b91c1c"
                   strokeWidth={2}
-                  dot={{ fill: "#EF4444", r: 4 }}
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          )}
+        </section>
 
-          {/* Expense Categories Pie Chart */}
-          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-md">
-            <h3 className="text-base md:text-lg font-semibold text-gray-800 mb-4 md:mb-6">
-              Expense Categories
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-4 space-y-2">
-              {categoryData.map((entry, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    />
-                    <span className="text-sm text-gray-600">{entry.name}</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-800">
-                    $
-                    {entry.value
-                      .toFixed(0)
-                      .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Transactions */}
-        <div
-          className={`bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 ${
-            hoverCard !== null ? "blur-sm" : ""
-          }`}
-        >
-          <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-800">
-              Recent Transactions
+        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 p-5">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Recent transactions
             </h2>
             <button
-              onClick={() => {
-                navigate("/transactions");
-                window.scrollTo(0, 0);
-              }}
-              className="text-cyan-600 hover:text-cyan-800 hover:bg-gray-200 p-2 text-sm font-medium cursor-pointer"
+              type="button"
+              onClick={() => navigate("/transactions")}
+              className="font-medium text-cyan-800 hover:underline"
             >
-              View All
+              View all
             </button>
           </div>
-
-          <div className="flex flex-col gap-2  divide-gray-200">
-            {recentTransactions.length > 0 ? (
-              recentTransactions.map((transaction, idx) => (
-                <div
-                  key={transaction._id}
-                  className={`p-6 hover:bg-white transition-all duration-500 flex items-center justify-between cursor-pointer mb-2 hover:px-100  hover:scale-150 ${
-                    transactionCard !== null && transactionCard !== idx
-                      ? "blur-[5px]"
-                      : ""
-                  } `}
-                  onMouseEnter={() => setTransactionCard(idx)}
-                  onMouseLeave={() => setTransactionCard(null)}
+          {recentTransactions.length === 0 ? (
+            <p className="p-5 text-gray-600">No transactions recorded yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {recentTransactions.map((transaction, index) => (
+                <li
+                  key={transaction._id ?? `${transaction.title}-${index}`}
+                  className="flex items-center justify-between gap-4 p-5"
                 >
-                  <div className="flex items-center gap-4">
-                    {/* Icon */}
-                    <div
-                      className={`p-3 rounded-xl ${
-                        transaction.type === "income"
-                          ? "bg-green-100"
-                          : "bg-red-100"
-                      }`}
-                    >
-                      {transaction.type === "income" ? (
-                        <FaArrowUp className="text-green-600 text-lg" />
-                      ) : (
-                        <FaArrowDown className="text-red-600 text-lg" />
-                      )}
-                    </div>
-
-                    {/* Details */}
+                  <div className="flex items-center gap-3">
+                    {transaction.type === "income" ? (
+                      <FaArrowUp
+                        aria-label="Income"
+                        className="text-green-700"
+                      />
+                    ) : (
+                      <FaArrowDown
+                        aria-label="Expense"
+                        className="text-red-700"
+                      />
+                    )}
                     <div>
-                      <h3 className="font-semibold text-gray-800">
+                      <p className="font-medium text-gray-900">
                         {transaction.title}
-                      </h3>
-                      <p className="text-sm text-gray-500">
-                        {transaction.category} • {transaction.date}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {transaction.category} · {transaction.date}
                       </p>
                     </div>
                   </div>
-
-                  {/* Amount */}
                   <p
-                    className={`text-lg font-bold ${
+                    className={`font-semibold ${
                       transaction.type === "income"
-                        ? "text-green-600"
-                        : "text-red-600"
+                        ? "text-green-700"
+                        : "text-red-700"
                     }`}
                   >
-                    {transaction.type === "income" ? "+" : "-"}$
-                    {transaction.amount
-                      .toFixed(2)
-                      .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                    {transaction.type === "income" ? "+" : "-"}
+                    {formatCurrency(transaction.amount)}
                   </p>
-                </div>
-              ))
-            ) : (
-              <div className="p-12 text-center text-gray-500">
-                <p className="text-lg">No transactions yet</p>
-                <p className="text-sm mt-2">
-                  Start by adding your first transaction
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
 

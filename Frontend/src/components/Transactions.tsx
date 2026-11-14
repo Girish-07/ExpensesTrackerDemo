@@ -1,744 +1,388 @@
-import { useState, useEffect } from "react";
-import {
-  useGetTransactionsQuery,
-  useGetSummaryQuery,
-  useAddTransactionMutation,
-  useDeleteTransactionMutation,
-} from "../store/api/transactionsApi";
+import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { FaArrowDown, FaArrowUp, FaTrash } from "react-icons/fa";
 import { useGetCategoriesQuery } from "../store/api/categoriesApi";
 import {
-  FaArrowUp,
-  FaArrowDown,
-  FaDollarSign,
-  FaPlus,
-  FaSearch,
-  FaTrash,
-  FaCalendar,
-  FaTimes,
-} from "react-icons/fa";
-import CircularProgress from "@mui/material/CircularProgress";
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Snackbar,
-  Alert,
-} from "@mui/material";
-import type { SelectChangeEvent } from "@mui/material";
-import { MdDashboard } from "react-icons/md";
-import { useNavigate } from "react-router-dom";
+  useAddTransactionMutation,
+  useDeleteTransactionMutation,
+  useGetSummaryQuery,
+  useGetTransactionsQuery,
+} from "../store/api/transactionsApi";
+
+const formatCurrency = (amount: number) =>
+  `$${amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const getToday = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 10);
+};
 
 const Transactions = () => {
-  const navigate = useNavigate();
   const {
     data: transactions = [],
-    isLoading,
-    isError,
-    error,
+    isLoading: transactionsLoading,
+    isError: transactionsError,
   } = useGetTransactionsQuery();
-  const { data: summary } = useGetSummaryQuery();
-  const { data: categories = [] } = useGetCategoriesQuery();
+  const {
+    data: categories = [],
+    isLoading: categoriesLoading,
+    isError: categoriesError,
+  } = useGetCategoriesQuery();
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+  } = useGetSummaryQuery();
   const [addTransaction, { isLoading: isAdding }] = useAddTransactionMutation();
   const [deleteTransaction] = useDeleteTransactionMutation();
+  const [title, setTitle] = useState("");
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<"income" | "expense">("expense");
+  const [category, setCategory] = useState("");
+  const [date, setDate] = useState(getToday);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const { totalIncome = 0, totalExpenses = 0, netAmount = 0 } = summary || {};
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("All Types");
-  const [categoryFilter, setCategoryFilter] = useState("All Categories");
-  const [openDialog, setOpenDialog] = useState(false);
-  const [rightClickedId, setRightClickedId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "success" as "success" | "error",
+  const filteredTransactions = transactions.filter((transaction) => {
+    const matchesSearch = transaction.title
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+    const matchesType = typeFilter === "all" || transaction.type === typeFilter;
+    const matchesCategory =
+      categoryFilter === "all" || transaction.category === categoryFilter;
+    return matchesSearch && matchesType && matchesCategory;
   });
 
-  const [newTransaction, setNewTransaction] = useState({
-    title: "",
-    amount: "",
-    type: "expense" as "income" | "expense",
-    category: "",
-  });
-  const [transactionCard, setTransactionCard] = useState<number | null>(null);
+  const handleAddTransaction = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    setError("");
 
-  // Close context menu on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      if (contextMenu) {
-        setContextMenu(null);
-        setRightClickedId(null);
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [contextMenu]);
-
-  const handleAddTransaction = async () => {
-    // Validation
-    if (!newTransaction.title) {
-      setSnackbar({
-        open: true,
-        message: "Please enter a transaction title",
-        severity: "error",
-      });
+    if (!title.trim() || !category || !date) {
+      setError("Enter a description, category, and date.");
       return;
     }
-    if (!newTransaction.amount || parseFloat(newTransaction.amount) <= 0) {
-      setSnackbar({
-        open: true,
-        message: "Please enter a valid amount",
-        severity: "error",
-      });
-      return;
-    }
-    if (!newTransaction.category) {
-      setSnackbar({
-        open: true,
-        message: "Please select a category",
-        severity: "error",
-      });
+
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setError("Enter an amount greater than zero.");
       return;
     }
 
     try {
       await addTransaction({
-        title: newTransaction.title,
-        amount: parseFloat(newTransaction.amount),
-        type: newTransaction.type,
-        category: newTransaction.category,
-        date: new Date().toLocaleDateString("en-US"),
+        title: title.trim(),
+        amount: numericAmount,
+        type,
+        category,
+        date,
       }).unwrap();
-
-      setSnackbar({
-        open: true,
-        message: "Transaction added successfully!",
-        severity: "success",
-      });
-
-      setNewTransaction({
-        title: "",
-        amount: "",
-        type: "expense",
-        category: "",
-      });
-      setOpenDialog(false);
-    } catch (error) {
-      console.error("Failed to add transaction:", error);
-      setSnackbar({
-        open: true,
-        message: "Failed to add transaction. Please try again.",
-        severity: "error",
-      });
+      setTitle("");
+      setAmount("");
+      setMessage("Transaction added.");
+    } catch {
+      setError("Could not add the transaction. Please try again.");
     }
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
   };
 
   const handleDeleteTransaction = async (id: string) => {
+    setMessage("");
+    setError("");
+
     try {
       await deleteTransaction(id).unwrap();
-      setSnackbar({
-        open: true,
-        message: "Transaction deleted successfully!",
-        severity: "success",
-      });
-    } catch (error: any) {
-      console.error("Failed to delete transaction:", error);
-      setSnackbar({
-        open: true,
-        message: error?.data?.message || "Failed to delete transaction.", // Use backend message
-        severity: "error",
-      });
+      setMessage("Transaction deleted.");
+    } catch {
+      setError("Could not delete the transaction. Please try again.");
     }
   };
 
-  const filteredTransactions = transactions.filter((transaction) => {
-    const matchesSearch = transaction.title
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const matchesType =
-      typeFilter === "All Types" ||
-      transaction.type === typeFilter.toLowerCase();
-    const matchesCategory =
-      categoryFilter === "All Categories" ||
-      transaction.category === categoryFilter;
-    return matchesSearch && matchesType && matchesCategory;
-  });
-
-  // Loading state
-  if (isLoading) {
+  if (transactionsLoading || categoriesLoading || summaryLoading) {
     return (
-      <div className="min-h-[90vh] bg-white p-8 flex items-center justify-center">
-        <div className="text-center">
-          <CircularProgress size={50} />
-          <p className="text-gray-600 text-lg mt-5">Loading transactions...</p>
-        </div>
-      </div>
+      <main className="flex min-h-[70vh] items-center justify-center bg-gray-50 text-gray-600">
+        Loading transactions...
+      </main>
     );
   }
 
-  // Error state
-  if (isError) {
+  if (transactionsError || categoriesError || summaryError || !summary) {
     return (
-      <div className="min-h-[90vh] bg-white p-8 flex items-center justify-center">
-        <div className="text-center bg-red-50 p-8 rounded-2xl border border-red-200">
-          <div className="text-red-500 text-5xl mb-4">⚠️</div>
-          <h2 className="text-2xl font-bold text-red-800 mb-2">
-            Error Loading Data
-          </h2>
-          <p className="text-red-600">
-            {error && "status" in error
-              ? `Error: ${error.status}`
-              : "Failed to load transactions"}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <main className="min-h-[70vh] bg-gray-50 px-4 py-10 md:px-8">
+        <p role="alert" className="mx-auto max-w-3xl text-red-700">
+          Could not load transactions. Check the backend connection and try
+          again.
+        </p>
+      </main>
     );
   }
 
   return (
-    <div
-      className="min-h-[90vh]  bg-white p-4 md:p-8 page-enter"
-      onClick={() => {
-        setContextMenu(null);
-        setRightClickedId(null);
-        setTransactionCard(null); // Reset blur on outside click
-      }}
-    >
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-              Transactions
-            </h1>
-            <p className="text-sm md:text-base text-gray-500 mt-1">
-              Manage your income and expenses
+    <main className="min-h-[90vh] bg-gray-50 px-4 py-10 md:px-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
+          <p className="mt-2 text-gray-600">
+            Add income and expenses, then search or filter your history.
+          </p>
+        </header>
+
+        <section
+          aria-label="Financial totals"
+          className="mb-8 grid gap-4 sm:grid-cols-3"
+        >
+          {[
+            { label: "Total income", amount: summary.totalIncome, color: "text-green-700" },
+            { label: "Total expenses", amount: summary.totalExpenses, color: "text-red-700" },
+            { label: "Balance", amount: summary.netAmount, color: "text-gray-900" },
+          ].map((item) => (
+            <article
+              key={item.label}
+              className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-sm text-gray-600">{item.label}</p>
+              <p className={`mt-2 text-2xl font-bold ${item.color}`}>
+                {formatCurrency(item.amount)}
+              </p>
+            </article>
+          ))}
+        </section>
+
+        <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-gray-900">
+            Add a transaction
+          </h2>
+          {categories.length === 0 ? (
+            <p className="text-gray-600">
+              Create a category before adding a transaction.{" "}
+              <Link
+                to="/categories"
+                className="font-medium text-cyan-800 hover:underline"
+              >
+                Manage categories
+              </Link>
             </p>
-          </div>
-          <div className="flex   sm:flex-row gap-3 md:gap-4 w-full md:w-auto">
-            <button
-              onClick={() => {
-                navigate("/dashboard");
-                window.scrollTo(0, 0);
-              }}
-              className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors duration-200 shadow-lg cursor-pointer"
+          ) : (
+            <form
+              onSubmit={handleAddTransaction}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
             >
-              <MdDashboard />
-              Go To Dashboard
-            </button>
-            <button
-              onClick={() => setOpenDialog(true)}
-              className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors duration-200 shadow-lg cursor-pointer"
-            >
-              <FaPlus />
-              Add Transaction
-            </button>
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
-          {/* Total Income */}
-          <div className="bg-linear-to-br from-green-50 to-green-100 rounded-2xl p-6 shadow-md border border-green-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-green-700 text-sm font-medium">
-                  Total Income
-                </p>
-                <h2 className="text-3xl font-bold text-green-800 mt-2">
-                  $
-                  {totalIncome.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                </h2>
-              </div>
-              <div className="bg-green-500 p-3 rounded-xl">
-                <FaArrowUp className="text-white text-xl" />
-              </div>
-            </div>
-          </div>
-
-          {/* Total Expenses */}
-          <div className="bg-linear-to-br from-red-50 to-red-100 rounded-2xl p-6 shadow-md border border-red-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-red-700 text-sm font-medium">
-                  Total Expenses
-                </p>
-                <h2 className="text-3xl font-bold text-red-800 mt-2">
-                  $
-                  {totalExpenses
-                    .toFixed(2)
-                    .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                </h2>
-              </div>
-              <div className="bg-red-500 p-3 rounded-xl">
-                <FaArrowDown className="text-white text-xl" />
-              </div>
-            </div>
-          </div>
-
-          {/* Net Amount */}
-          <div className="bg-linear-to-br from-blue-50 to-blue-100 rounded-2xl p-6 shadow-md border border-blue-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-blue-700 text-sm font-medium">Net Amount</p>
-                <h2 className="text-3xl font-bold text-blue-800 mt-2">
-                  ${netAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                </h2>
-              </div>
-              <div className="bg-blue-500 p-3 rounded-xl">
-                <FaDollarSign className="text-white text-xl" />
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-
-        {/* Search and Filters */}
-        <div className="bg-white rounded-2xl p-4 md:p-6 mb-4 md:mb-6 shadow-md">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-            {/* Search */}
-            <div className="relative">
-              <FaSearch className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search transactions..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Type Filter */}
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="dropdown-left px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-            >
-              <option>All Types</option>
-              <option>Income</option>
-              <option>Expense</option>
-            </select>
-
-            {/* Category Filter */}
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="dropdown-left px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-            >
-              <option>All Categories</option>
-              {categories.map((category) => (
-                <option key={category._id} value={category.name}>
-                  {category.icon} {category.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-
-        {/* Transaction History */}
-        <div className=" rounded-2xl  shadow-2xl overflow-hidden border-2 border-gray-300 bg-gray-200">
-          <div className="p-6  bg-white ">
-            <h2 className="text-xl font-semibold  text-gray-800 ">
-              Transaction History
-            </h2>
-          </div>
-
-          <div className="flex flex-col gap-2 py-10  sm:px-0 md:px-6  ">
-            {filteredTransactions.length > 0 ? (
-              filteredTransactions.map((transaction, idx) => (
-                <div
-                  key={transaction._id}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setRightClickedId(transaction._id!);
-
-                    setContextMenu({ x: e.clientX, y: e.clientY });
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setTransactionCard(idx);
-                  }}
-                  className={`bg-white transition-all duration-500 flex flex-col sm:flex-row items-start sm:items-center justify-between group gap-3 rounded-xl sm:gap-0 relative border-y border-gray-100 hover:bg-gray-100
-                    cursor-pointer   ${
-                      transactionCard !== null && transactionCard !== idx
-                        ? "blur-[5px] hover:cursor-default"
-                        : ""
-                    } 
-                    ${
-                      transactionCard === idx
-                        ? "px-[100px] py-6 scale-[1.1] hover:bg-white "
-                        : "p-4 md:p-6"
-                    }`}
+              <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                Description
+                <input
+                  required
+                  maxLength={100}
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="e.g. Grocery shopping"
+                  className="rounded-lg border border-gray-300 px-3 py-2 font-normal outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                Amount
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="0.00"
+                  className="rounded-lg border border-gray-300 px-3 py-2 font-normal outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                Type
+                <select
+                  value={type}
+                  onChange={(event) =>
+                    setType(
+                      event.target.value === "income" ? "income" : "expense",
+                    )
+                  }
+                  className="rounded-lg border border-gray-300 px-3 py-2 font-normal outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
                 >
-                  <div className="flex items-center gap-4 flex-1">
-                    {/* Icon */}
-                    <div
-                      className={`p-3 rounded-xl ${
-                        transaction.type === "income"
-                          ? "bg-green-100"
-                          : "bg-red-100"
-                      }`}
-                    >
-                      {transaction.type === "income" ? (
-                        <FaArrowUp className="text-green-600 text-lg" />
-                      ) : (
-                        <FaArrowDown className="text-red-600 text-lg" />
-                      )}
-                    </div>
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                Category
+                <select
+                  required
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 font-normal outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
+                >
+                  <option value="" disabled>
+                    Choose one
+                  </option>
+                  {categories.map((item) => (
+                    <option key={item._id} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
+                Date
+                <input
+                  required
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 font-normal outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
+                />
+              </label>
+              <div className="sm:col-span-2 lg:col-span-5">
+                <button
+                  type="submit"
+                  disabled={isAdding}
+                  className="rounded-lg bg-cyan-700 px-5 py-3 font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAdding ? "Adding..." : "Add transaction"}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
 
-                    {/* Details */}
-                    <div className="flex-1 ">
-                      <h3 className="font-semibold text-gray-800 text-lg sm:text-sm md:text-sm">
+        {error && (
+          <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p
+            role="status"
+            className="mb-4 rounded-lg bg-green-50 p-3 text-green-700"
+          >
+            {message}
+          </p>
+        )}
+
+        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-100 p-5">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Transaction history
+            </h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <label className="sr-only" htmlFor="transaction-search">
+                Search transactions
+              </label>
+              <input
+                id="transaction-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search descriptions"
+                className="rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-cyan-700 focus:ring-2 focus:ring-cyan-100"
+              />
+              <label className="sr-only" htmlFor="type-filter">
+                Filter by type
+              </label>
+              <select
+                id="type-filter"
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-2"
+              >
+                <option value="all">All types</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+              </select>
+              <label className="sr-only" htmlFor="category-filter">
+                Filter by category
+              </label>
+              <select
+                id="category-filter"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-2"
+              >
+                <option value="all">All categories</option>
+                {categories.map((item) => (
+                  <option key={item._id} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {filteredTransactions.length === 0 ? (
+            <p className="p-8 text-center text-gray-600">
+              No transactions match your search.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {filteredTransactions.map((transaction, index) => (
+                <li
+                  key={transaction._id ?? `${transaction.title}-${index}`}
+                  className="flex items-center justify-between gap-4 p-5"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {transaction.type === "income" ? (
+                      <FaArrowUp
+                        aria-label="Income"
+                        className="shrink-0 text-green-700"
+                      />
+                    ) : (
+                      <FaArrowDown
+                        aria-label="Expense"
+                        className="shrink-0 text-red-700"
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-gray-900">
                         {transaction.title}
-                      </h3>
-                      <div className="flex items-center gap-4 mt-1">
-                        <span className="text-sm text-gray-500 flex items-center gap-1">
-                          <FaCalendar className="text-xs" />
-                          {transaction.date}
-                        </span>
-                        <span
-                          className={`text-xs px-3 py-1 rounded-full ${
-                            transaction.type === "income"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-orange-100 text-orange-700"
-                          }`}
-                        >
-                          {transaction.category.slice(0, 11)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Amount */}
-                    <div className="text-right mr-4">
-                      <p
-                        className={`text-xl font-bold ${
-                          transaction.type === "income"
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {transaction.type === "income" ? "+" : "-"}$
-                        {transaction.amount
-                          .toFixed(2)
-                          .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {transaction.category} · {transaction.date}
                       </p>
                     </div>
                   </div>
-
-                  {/* Delete Button - Visible on Mobile */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteTransaction(transaction._id!);
-                    }}
-                    className="md:hidden p-3 hover:bg-red-50 text-red-600 rounded-lg transition-all self-end"
-                  >
-                    <FaTrash />
-                  </button>
-
-                  {/* Context Menu */}
-                  {rightClickedId === transaction._id && contextMenu && (
-                    <div
-                      className="fixed bg-white shadow-lg rounded-lg border border-gray-200 py-1 z-50 min-w-[150px]"
-                      style={{
-                        top: `${contextMenu.y}px`,
-                        left: `${contextMenu.x}px`,
-                      }}
-                      onClick={(e) => e.stopPropagation()}
+                  <div className="flex shrink-0 items-center gap-3">
+                    <p
+                      className={`font-semibold ${
+                        transaction.type === "income"
+                          ? "text-green-700"
+                          : "text-red-700"
+                      }`}
                     >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTransaction(transaction._id!);
-                          setContextMenu(null);
-                          setRightClickedId(null);
-                        }}
-                        className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2 transition-all"
-                      >
-                        <FaTrash />
-                        Delete Transaction
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="p-12 text-center text-black">
-                <p className="text-2xl">No transactions found</p>
-                <p className="text-lg mt-2">
-                  Try adjusting your filters or add a new transaction 😔
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+                      {transaction.type === "income" ? "+" : "-"}
+                      {formatCurrency(transaction.amount)}
+                    </p>
+                    <button
+                      type="button"
+                      aria-label={`Delete ${transaction.title}`}
+                      onClick={() => {
+                        if (
+                          transaction._id &&
+                          window.confirm("Delete this transaction?")
+                        ) {
+                          void handleDeleteTransaction(transaction._id);
+                        }
+                      }}
+                      className="rounded-md p-2 text-red-700 hover:bg-red-50"
+                    >
+                      <FaTrash aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-
-      {/* ====================================================================== */}
-      {/* ====================================================================== */}
-      {/* ====================================================================== */}
-      {/* ====================================================================== */}
-
-      {/* Add Transaction Dialog */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        maxWidth="sm"
-        fullWidth
-        disableScrollLock
-        sx={{
-          mt: "0px",
-        }}
-      >
-        <DialogTitle className="text-xl text-center font-semibold relative">
-          Add New Transaction
-          <button
-            onClick={() => setOpenDialog(false)}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white hover:text-white cursor-pointer hover:bg-black transition-colors bg-white0 rounded-4xl p-2"
-          >
-            <FaTimes size={20} />
-          </button>
-        </DialogTitle>
-        <DialogContent>
-          <div className="space-y-4 h-100 mt-4 flex flex-col justify-around">
-            {/* Type Toggle */}
-            <div className="flex gap-2 w-full">
-              <button
-                type="button"
-                onClick={() =>
-                  setNewTransaction({ ...newTransaction, type: "expense" })
-                }
-                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all duration-200 flex items-center justify-center gap-2 hover:cursor-pointer ${
-                  newTransaction.type === "expense"
-                    ? "border-red-500 bg-red-50 text-red-700"
-                    : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
-                }`}
-              >
-                <FaArrowDown />
-                Expense
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setNewTransaction({ ...newTransaction, type: "income" })
-                }
-                className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all duration-200 flex items-center justify-center gap-2 hover:cursor-pointer ${
-                  newTransaction.type === "income"
-                    ? "border-green-500 bg-green-50 text-green-700"
-                    : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"
-                }`}
-              >
-                <FaArrowUp />
-                Income
-              </button>
-            </div>
-            <div className="flex justify-between items-center">
-              <FormControl
-                sx={{
-                  width: "300px",
-                  "& .MuiOutlinedInput-root": {
-                    "& fieldset": {
-                      borderColor: "#000000",
-                    },
-                    "&:hover fieldset": {
-                      borderColor: "#000000",
-                    },
-                    "&.Mui-focused fieldset": {
-                      borderColor: "#000000",
-                    },
-                  },
-                  "& .MuiInputLabel-root": {
-                    color: "#000000",
-                  },
-                  "& .MuiSelect-select": {
-                    color: "#000000",
-                  },
-                }}
-              >
-                <InputLabel>Category</InputLabel>
-                <Select
-                  value={newTransaction.category}
-                  label="Category"
-                  onChange={(e: SelectChangeEvent) =>
-                    setNewTransaction({
-                      ...newTransaction,
-                      category: e.target.value,
-                    })
-                  }
-                  MenuProps={{
-                    disablePortal: true,
-                    PaperProps: {
-                      style: {
-                        maxHeight: 500,
-                      },
-                    },
-                  }}
-                >
-                  {categories.length > 0 ? (
-                    categories.map((category) => (
-                      <MenuItem key={category._id} value={category.name}>
-                        <span className="flex items-center gap-2">
-                          <span>{category.icon}</span>
-                          {category.name}
-                        </span>
-                      </MenuItem>
-                    ))
-                  ) : (
-                    <MenuItem disabled>
-                      No categories available. Add one in Categories page.
-                    </MenuItem>
-                  )}
-                </Select>
-              </FormControl>
-              <Button
-                onClick={() => navigate("/categories")}
-                color="inherit"
-                disabled={isAdding}
-                sx={{
-                  bgcolor: "#0891B2",
-                  color: "white",
-                  px: "24px",
-                  py: "12px",
-                }}
-              >
-                <FaPlus />
-                &nbsp; Add Category
-              </Button>
-            </div>
-            <TextField
-              fullWidth
-              label="Transaction Title"
-              placeholder="Enter description..."
-              value={newTransaction.title}
-              onChange={(e) =>
-                setNewTransaction({ ...newTransaction, title: e.target.value })
-              }
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& fieldset": {
-                    borderColor: "#000",
-                  },
-                  "&:hover fieldset": {
-                    borderColor: "#000",
-                  },
-                  "&.Mui-focused fieldset": {
-                    borderColor: "#000",
-                  },
-                  "& input": {
-                    color: "#000",
-                  },
-                },
-                "& .MuiInputLabel-root": {
-                  color: "#000",
-                },
-              }}
-            />
-            <TextField
-              fullWidth
-              label="Amount"
-              type="number"
-              placeholder="0.00"
-              value={newTransaction.amount}
-              onChange={(e) =>
-                setNewTransaction({ ...newTransaction, amount: e.target.value })
-              }
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& fieldset": {
-                    borderColor: "#000000",
-                  },
-                  "&:hover fieldset": {
-                    borderColor: "#000000",
-                  },
-                  "&.Mui-focused fieldset": {
-                    borderColor: "#000000",
-                  },
-                  "& input": {
-                    color: "#000000",
-                  },
-                },
-                "& .MuiInputLabel-root": {
-                  color: "#000000",
-                },
-              }}
-            />
-          </div>
-        </DialogContent>
-        <DialogActions
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            px: "50px",
-            pb: "50px",
-          }}
-        >
-          <Button
-            onClick={handleAddTransaction}
-            variant="contained"
-            className="bg-cyan-500"
-            disabled={isAdding}
-            sx={{
-              px: "48px",
-              py: "12px",
-              bgcolor: "#0891B2",
-            }}
-          >
-            {isAdding ? "Adding..." : "Add Transaction"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          sx={{ width: "100%" }}
-          variant="filled"
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </div>
+    </main>
   );
 };
 

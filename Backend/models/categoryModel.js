@@ -8,19 +8,6 @@ const categorySchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
-    type: {
-      type: String,
-      enum: ["income", "expense", "both"],
-      default: "both",
-    },
-    color: {
-      type: String,
-      default: "#3B82F6", // Default blue color
-    },
-    icon: {
-      type: String,
-      default: "📁",
-    },
   },
   {
     timestamps: true,

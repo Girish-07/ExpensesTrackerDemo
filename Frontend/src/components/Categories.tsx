@@ -1,585 +1,158 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
-  useGetCategoriesQuery,
   useAddCategoryMutation,
   useDeleteCategoryMutation,
+  useGetCategoriesQuery,
 } from "../store/api/categoriesApi";
-import {
-  useGetTransactionsQuery,
-  useGetSummaryQuery,
-} from "../store/api/transactionsApi";
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Snackbar,
-  Alert,
-} from "@mui/material";
-import {
-  FaDollarSign,
-  FaArrowDown,
-  FaArrowUp,
-  FaPlus,
-  FaTrash,
-  FaTimes,
-} from "react-icons/fa";
-import { HiDotsVertical } from "react-icons/hi";
-import { useNavigate } from "react-router-dom";
+
+const getErrorMessage = (error: unknown) => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "message" in error.data &&
+    typeof error.data.message === "string"
+  ) {
+    return error.data.message;
+  }
+
+  return "Something went wrong. Please try again.";
+};
 
 const Categories = () => {
-  const navigate = useNavigate();
-  const { data: categories = [], isLoading } = useGetCategoriesQuery();
-  const { data: transactions = [] } = useGetTransactionsQuery();
-  const { data: summary } = useGetSummaryQuery();
+  const { data: categories = [], isLoading, isError } = useGetCategoriesQuery();
   const [addCategory, { isLoading: isAdding }] = useAddCategoryMutation();
   const [deleteCategory] = useDeleteCategoryMutation();
+  const [name, setName] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [openDialog, setOpenDialog] = useState(false);
-  const [selectedIcon, setSelectedIcon] = useState("📁");
-  const [categoryName, setCategoryName] = useState("");
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "success" as "success" | "error",
-  });
-  const [expCatMenu, setExpCatMenu] = useState(false);
-  const [incCatMenu, setIncCatMenu] = useState(false);
-  const [catMenuIdx, setCatMenuIdx] = useState(0);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage("");
+    setError("");
 
-  const { totalIncome = 0, totalExpenses = 0 } = summary || {};
-
-  // Icon options
-  const iconOptions = [
-    "🍔",
-    "🚗",
-    "🎬",
-    "🛒",
-    "💊",
-    "💡",
-    "📱",
-    "✈️",
-    "🏠",
-    "🎮",
-    "📚",
-    "💼",
-    "🎵",
-    "🏋️",
-    "☕",
-  ];
-
-  // Calculate category expenses
-  const getCategoryExpense = (categoryName: string) => {
-    return transactions
-      .filter((t) => t.category === categoryName && t.type === "expense")
-      .reduce((sum, t) => sum + t.amount, 0);
-  };
-
-  // Calculate category income
-  const getCategoryIncome = (categoryName: string) => {
-    return transactions
-      .filter((t) => t.category === categoryName && t.type === "income")
-      .reduce((sum, t) => sum + t.amount, 0);
-  };
-
-  // Get transaction count
-  const getTransactionCount = (categoryName: string) => {
-    return transactions.filter((t) => t.category === categoryName).length;
-  };
-
-  const handleAddCategory = async () => {
-    if (!categoryName.trim()) {
-      setSnackbar({
-        open: true,
-        message: "Please enter a category name",
-        severity: "error",
-      });
+    const categoryName = name.trim();
+    if (!categoryName) {
+      setError("Enter a category name.");
       return;
     }
 
     try {
-      const res = await addCategory({
-        name: categoryName,
-        type: "both",
-        color: "#3B82F6",
-        icon: selectedIcon,
-      }).unwrap();
-
-      setSnackbar({
-        open: true,
-        message: res.message || "Category added successfully!",
-        severity: "success",
-      });
-
-      setCategoryName("");
-      setSelectedIcon("📁");
-      setOpenDialog(false);
-    } catch (error: any) {
-      setSnackbar({
-        open: true,
-        message: error?.data?.message || "Failed to add category.",
-        severity: "error",
-      });
+      const response = await addCategory({ name: categoryName }).unwrap();
+      setName("");
+      setMessage(response.message);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
     }
   };
 
-  const handleDeleteCategory = async (id: string) => {
+  const handleDelete = async (id: string) => {
+    setMessage("");
+    setError("");
+    setDeletingId(id);
+
     try {
       await deleteCategory(id).unwrap();
-      setSnackbar({
-        open: true,
-        message: "Category deleted successfully!",
-        severity: "success",
-      });
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: "Failed to delete category",
-        severity: "error",
-      });
+      setMessage("Category deleted.");
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  // Separate categories
-  const expenseCategories = categories.filter(
-    (cat) => cat.type === "expense" || cat.type === "both"
-  );
-  const incomeCategories = categories.filter(
-    (cat) => cat.type === "income" || cat.type === "both"
-  );
-
-  const totalSpent = totalExpenses;
-  const budgetUsed =
-    totalIncome > 0 ? ((totalExpenses / totalIncome) * 100).toFixed(1) : "0";
-
-  if (isLoading) {
-    return (
-      <div className="min-h-[90vh] bg-white p-8 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-500"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-[90vh] bg-white p-4 md:p-8 page-enter">
-      {/* Backdrop to close menu */}
-      {(expCatMenu || incCatMenu) && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => {
-            setExpCatMenu(false);
-            setIncCatMenu(false);
-          }}
-        ></div>
-      )}
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-              Categories
-            </h1>
-            <p className="text-sm md:text-base text-gray-500 mt-1">
-              Organize your transactions and set budgets
-            </p>
-          </div>
+    <main className="min-h-[90vh] bg-gray-50 px-4 py-10 md:px-8">
+      <div className="mx-auto max-w-3xl">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Categories</h1>
+          <p className="mt-2 text-gray-600">
+            Create categories to organize your transactions.
+          </p>
+        </header>
 
-          <div className="flex gap-5">
-            <button
-              onClick={() => {
-                navigate("/transactions");
-                window.scrollTo(0, 0);
-              }}
-              className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors duration-200 shadow-lg cursor-pointer"
-            >
-              Go To Transaction
-            </button>
-            <button
-              onClick={() => setOpenDialog(true)}
-              className="bg-cyan-500 hover:bg-cyan-600 text-white px-6 py-3 rounded-lg flex items-center gap-2 transition-colors duration-200 shadow-lg cursor-pointer"
-            >
-              <FaPlus />
-              Add Category
-            </button>
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* Summary Cards */}
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
-          {/* Total Budget */}
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 shadow-md border border-blue-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FaDollarSign className="text-blue-600" />
-                  <span className="text-blue-600 text-sm">
-                    $
-                    {totalIncome
-                      .toFixed(2)
-                      .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                  </span>
-                </div>
-                <h3 className="text-blue-700 text-sm font-medium mb-2">
-                  Total Budget
-                </h3>
-                <p className="text-blue-600 text-xs">Monthly allocation</p>
-              </div>
-              <p className="text-xl md:text-2xl lg:text-3xl font-bold text-blue-800">
-                ${totalIncome.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-              </p>
-            </div>
-          </div>
-
-          {/* Total Spent */}
-          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-2xl p-6 shadow-md border border-red-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FaArrowDown className="text-red-600" />
-                  <span className="text-red-600 text-sm">
-                    $
-                    {totalSpent
-                      .toFixed(2)
-                      .replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                  </span>
-                </div>
-                <h3 className="text-red-700 text-sm font-medium mb-2">
-                  Total Spent
-                </h3>
-                <p className="text-red-600 text-xs">This month</p>
-              </div>
-              <p className="text-xl md:text-2xl lg:text-3xl font-bold text-red-800">
-                ${totalSpent.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-              </p>
-            </div>
-          </div>
-
-          {/* Budget Used */}
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 shadow-md border border-green-200 hover:scale-110 transition-all duration-700 cursor-pointer">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FaArrowUp className="text-green-600" />
-                  <span className="text-green-600 text-sm">{budgetUsed}%</span>
-                </div>
-                <h3 className="text-green-700 text-sm font-medium mb-2">
-                  Budget Used
-                </h3>
-                <p className="text-green-600 text-xs">Overall utilization</p>
-              </div>
-              <p className="text-xl md:text-2xl lg:text-3xl font-bold text-green-800">
-                {budgetUsed}%
-              </p>
-            </div>
-          </div>
-        </div>
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-
-        {/* Expense Categories */}
-        <div className="bg-gray-100 rounded-2xl p-6 shadow-md mb-8">
-          <div className="flex items-center gap-2 mb-6">
-            <FaArrowDown className="text-gray-700" />
-            <h2 className="text-xl font-semibold text-gray-800">
-              Expense Categories
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ">
-            {expenseCategories.length > 0 ? (
-              expenseCategories.map((category, idx) => {
-                const spent = getCategoryExpense(category.name);
-                const transactionCount = getTransactionCount(category.name);
-
-                return (
-                  <div
-                    key={category._id}
-                    className="bg-white rounded-xl p-5 hover:shadow-md transition-shadow group relative"
-                  >
-                    {/* Category Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl">{category.icon}</span>
-                        <div>
-                          <h3 className="font-semibold text-gray-800">
-                            {category.name}
-                          </h3>
-                          <p className="text-xs text-gray-500">
-                            {transactionCount} transactions
-                          </p>
-                        </div>
-                      </div>
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIncCatMenu(false);
-                          if (catMenuIdx === idx && expCatMenu) {
-                            setExpCatMenu(false);
-                          } else {
-                            setExpCatMenu(true);
-                            setCatMenuIdx(idx);
-                          }
-                        }}
-                        className="relative z-50"
-                      >
-                        <button className="hover:bg-gray-300 rounded-xl p-1 cursor-pointer">
-                          <HiDotsVertical />
-                        </button>
-                        {expCatMenu && catMenuIdx === idx ? (
-                          <div className="absolute right-5 bg-white shadow-lg rounded-lg border border-gray-200 z-50 min-w-[150px]">
-                            <button
-                              className="w-full h-full text-left py-2 hover:bg-red-50 text-red-600 flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer"
-                              onClick={() =>
-                                handleDeleteCategory(category._id!)
-                              }
-                            >
-                              <FaTrash />
-                              Delete
-                            </button>
-                          </div>
-                        ) : (
-                          ""
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Spent Amount */}
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm text-gray-600">Spent</span>
-                      <span className="text-lg font-bold text-gray-900">
-                        ${spent.toLocaleString()}
-                      </span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-red-500 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(
-                            (spent / (totalExpenses || 1)) * 100,
-                            100
-                          )}%`,
-                        }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {((spent / (totalExpenses || 1)) * 100).toFixed(1)}% of
-                      total expenses
-                    </p>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="col-span-3 text-center py-8 text-gray-500">
-                No expense categories yet
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-        {/* ============================================================ */}
-
-        {/* Income Categories */}
-        <div className="bg-gray-100 rounded-2xl p-6 shadow-md">
-          <div className="flex items-center gap-2 mb-6">
-            <FaArrowUp className="text-gray-700" />
-            <h2 className="text-xl font-semibold text-gray-800">
-              Income Categories
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {incomeCategories.length > 0 ? (
-              incomeCategories.map((category, idx) => {
-                const earned = getCategoryIncome(category.name);
-                const transactionCount = getTransactionCount(category.name);
-
-                return (
-                  <div
-                    key={category._id}
-                    className="bg-white rounded-xl p-5 hover:shadow-md transition-shadow group relative"
-                  >
-                    {/* Category Header */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl">{category.icon}</span>
-                        <div>
-                          <h3 className="font-semibold text-gray-800">
-                            {category.name}
-                          </h3>
-                          <p className="text-xs text-gray-500">
-                            {transactionCount} transactions
-                          </p>
-                        </div>
-                      </div>
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpCatMenu(false);
-                          if (catMenuIdx === idx && incCatMenu) {
-                            setIncCatMenu(false);
-                          } else {
-                            setIncCatMenu(true);
-                            setCatMenuIdx(idx);
-                          }
-                        }}
-                        className="relative z-50"
-                      >
-                        <button className="hover:bg-gray-300 rounded-xl p-1 cursor-pointer">
-                          <HiDotsVertical />
-                        </button>
-                        {incCatMenu && catMenuIdx === idx ? (
-                          <div className="absolute right-5 bg-white shadow-lg rounded-lg border border-gray-200 z-50 min-w-[150px]">
-                            <button
-                              className="w-full h-full text-left py-2 hover:bg-red-50 text-red-600 flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer"
-                              onClick={() =>
-                                handleDeleteCategory(category._id!)
-                              }
-                            >
-                              <FaTrash />
-                              Delete
-                            </button>
-                          </div>
-                        ) : (
-                          ""
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Earned Amount */}
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">
-                        Total Earned
-                      </span>
-                      <span className="text-lg font-bold text-green-600">
-                        +${earned.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="col-span-3 text-center py-8 text-gray-500">
-                No income categories yet
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* ============================================================ */}
-      {/* ============================================================ */}
-
-      {/* Add Category Dialog */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
-        maxWidth="sm"
-        fullWidth
-        disableScrollLock
-      >
-        <DialogTitle className="text-xl font-semibold">
-          Add New Category
+        <form
+          onSubmit={handleSubmit}
+          className="mb-8 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:flex-row"
+        >
+          <label className="sr-only" htmlFor="category-name">
+            Category name
+          </label>
+          <input
+            id="category-name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="e.g. Groceries"
+            maxLength={60}
+            className="min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
+          />
           <button
-            onClick={() => setOpenDialog(false)}
-            className="absolute right-4 top-10 -translate-y-1/2 text-gray-500 hover:text-black cursor-pointer hover:bg-gray-200  transition-all  rounded-4xl p-2"
-          >
-            <FaTimes size={20} />
-          </button>
-        </DialogTitle>
-        <DialogContent sx={{ padding: "24px", minHeight: "400px" }}>
-          <div className="space-y-6 mt-4">
-            {/* Category Name */}
-            <TextField
-              fullWidth
-              label="Category Name"
-              placeholder="Max 20 characters"
-              helperText="e.g., Groceries, Rent, Salary"
-              value={categoryName}
-              onChange={(e) => setCategoryName(e.target.value)}
-              inputProps={{ maxLength: 20 }}
-            />
-
-            {/* Icon Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mt-3 mb-3">
-                Choose Icon
-              </label>
-              <div className="grid grid-cols-5 gap-3">
-                {iconOptions.map((icon) => (
-                  <button
-                    key={icon}
-                    type="button"
-                    onClick={() => setSelectedIcon(icon)}
-                    className={`text-3xl p-3 rounded-lg border-2 transition-all hover:scale-110 ${
-                      selectedIcon === icon
-                        ? "border-cyan-500 bg-cyan-50"
-                        : "border-gray-200 hover:border-cyan-300"
-                    }`}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-        <DialogActions
-          className="px-6 pb-4"
-          sx={{
-            width: "100%",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            mb: "20px",
-          }}
-        >
-          <Button
-            onClick={handleAddCategory}
-            variant="contained"
+            type="submit"
             disabled={isAdding}
-            sx={{
-              bgcolor: "#0891B2",
-              px: "56px",
-              py: "10px",
-              "&:hover": { bgcolor: "#0e7490" },
-            }}
+            className="rounded-lg bg-cyan-700 px-5 py-3 font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isAdding ? "Adding..." : "Add Category"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            {isAdding ? "Adding..." : "Add category"}
+          </button>
+        </form>
 
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          variant="filled"
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </div>
+        {error && (
+          <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-red-700">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p
+            role="status"
+            className="mb-4 rounded-lg bg-green-50 p-3 text-green-700"
+          >
+            {message}
+          </p>
+        )}
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xl font-semibold text-gray-900">
+            Your categories
+          </h2>
+          {isLoading ? (
+            <p className="text-gray-600">Loading categories...</p>
+          ) : isError ? (
+            <p role="alert" className="text-red-700">
+              Could not load categories. Check the backend connection and try
+              again.
+            </p>
+          ) : categories.length === 0 ? (
+            <p className="text-gray-600">
+              No categories yet. Add one above to get started.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {categories.map((category) => (
+                <li
+                  key={category._id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
+                  <span className="font-medium text-gray-800">
+                    {category.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(category._id)}
+                    disabled={deletingId === category._id}
+                    className="rounded-md px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingId === category._id ? "Removing..." : "Remove"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </main>
   );
 };
 
